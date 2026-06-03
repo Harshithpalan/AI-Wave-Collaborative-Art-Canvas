@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI WAVE — Collaborative Art Canvas</title>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Mono:wght@400;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --surface-light: #1a1a25;
+            --border: #2a2a3a;
+            --text: #e0e0e8;
+            --text-dim: #6a6a7a;
+            --p1-color: #ff6b6b;
+            --p1-glow: #ff6b6b55;
+            --p2-color: #4ecdc4;
+            --p2-glow: #4ecdc455;
+            --accent: #a855f7;
+            --accent-glow: #a855f755;
+        }
+        
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .app-container {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            min-height: 100vh;
+        }
+        
+        @media (max-width: 1000px) {
+            .app-container {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Canvas Stage */
+        .stage {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+        }
+        
+        .stage-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-icon {
+            font-size: 28px;
+        }
+        
+        .logo span {
+            background: linear-gradient(135deg, var(--p1-color), var(--p2-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header-controls {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .icon-btn {
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .icon-btn:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+        
+        /* Video & Canvas Area */
+        .video-area {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+        }
+        
+        .canvas-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 4/3;
+            background: #0d0d12;
+            border-radius: 20px;
+            overflow: hidden;
+            border: 2px solid var(--border);
+        }
+        
+        #artCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.3;
+            transform: scaleX(-1);
+            pointer-events: none;
+        }
+        
+        .webcam-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        /* Player Indicators */
+        .player-indicator {
+            position: absolute;
+            top: 20px;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 10;
+        }
+        
+        .player-indicator.p1 {
+            left: 20px;
+            background: var(--p1-color);
+            color: white;
+        }
+        
+        .player-indicator.p2 {
+            right: 20px;
+            background: var(--p2-color);
+            color: white;
+        }
+        
+        .player-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: white;
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .player-status {
+            position: absolute;
+            bottom: 20px;
+            padding: 8px 16px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 8px;
+            font-size: 12px;
+            font-family: 'Space Mono', monospace;
+            z-index: 10;
+        }
+        
+        .player-status.p1 {
+            left: 20px;
+            color: var(--p1-color);
+        }
+        
+        .player-status.p2 {
+            right: 20px;
+            color: var(--p2-color);
+        }
+        
+        /* Loading Overlay */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--surface);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            z-index: 100;
+            border-radius: 20px;
+        }
+        
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            font-size: 18px;
+            color: var(--text-dim);
+        }
+        
+        /* Control Panel */
+        .panel {
+            background: var(--surface);
+            padding: 30px;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+        
+        .panel-section {
+            margin-bottom: 30px;
+        }
+        
+        .panel-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+        }
+        
+        /* Player 1 Controls - Color */
+        .p1-section {
+            padding: 20px;
+            background: linear-gradient(135deg, var(--p1-color) 0%, var(--p1-glow) 100%);
+            border-radius: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .p1-title {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .color-presets {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        
+        .color-preset {
+            aspect-ratio: 1;
+            border: 2px solid transparent;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .color-preset:hover {
+            transform: scale(1.1);
+        }
+        
+        .color-preset.active {
+            border-color: white;
+            box-shadow: 0 0 15px currentColor;
+        }
+        
+        .custom-color {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .custom-color input[type="color"] {
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            background: transparent;
+        }
+        
+        .custom-color span {
+            font-size: 14px;
+            color: var(--text-dim);
+        }
+        
+        /* Player 2 Controls - Brush */
+        .p2-section {
+            padding: 20px;
+            background: linear-gradient(135deg, var(--p2-color) 0%, var(--p2-glow) 100%);
+            border-radius: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .p2-title {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .brush-preview {
+            height: 60px;
+            background: var(--surface);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        .brush-preview-dot {
+            border-radius: 50%;
+            background: var(--p2-color);
+            transition: all 0.2s ease;
+        }
+        
+        .brush-slider {
+            width: 100%;
+        }
+        
+        .slider-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        
+        .slider-label {
+            font-size: 14px;
+        }
+        
+        .slider-value {
+            font-size: 14px;
+            font-family: 'Space Mono', monospace;
+            color: var(--text-dim);
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            background: var(--surface);
+            border-radius: 3px;
+            outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: var(--p2-color);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--p2-glow);
+        }
+        
+        /* Canvas Controls */
+        .canvas-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .canvas-btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .canvas-btn:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+        
+        .canvas-btn.danger {
+            border-color: #ff4444;
+        }
+        
+        .canvas-btn.danger:hover {
+            background: #ff4444;
+            color: white;
+        }
+        
+        /* Session Stats */
+        .session-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        
+        .stat-card {
+            padding: 16px;
+            background: var(--surface-light);
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: 800;
+            font-family: 'Space Mono', monospace;
+        }
+        
+        .stat-value.p1 {
+            color: var(--p1-color);
+        }
+        
+        .stat-value.p2 {
+            color: var(--p2-color);
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+        
+        /* Status Message */
+        .status-message {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 16px 32px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 50px;
+            font-family: 'Space Mono', monospace;
+            font-size: 14px;
+            z-index: 1000;
+            display: none;
+            animation: slideUp 0.3s ease;
+        }
+        
+        .status-message.show {
+            display: block;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+        
+        /* Hidden */
+        .hidden {
+            display: none !important;
+        }
+        
+        /* Instructions */
+        .instructions {
+            padding: 20px;
+            background: var(--surface-light);
+            border-radius: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .instructions-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .instructions-list {
+            list-style: none;
+        }
+        
+        .instructions-list li {
+            padding: 8px 0;
+            font-size: 14px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .instructions-list .p1-tag {
+            color: var(--p1-color);
+            font-weight: 600;
+        }
+        
+        .instructions-list .p2-tag {
+            color: var(--p2-color);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="stage">
+            <div class="stage-header">
+                <div class="logo">
+                    <span class="logo-icon">🌊</span>
+                    <span>AI WAVE</span>
+                </div>
+                <div class="header-controls">
+                    <button class="icon-btn" id="mirrorBtn" title="Toggle Mirror">↔</button>
+                    <button class="icon-btn" id="overlayBtn" title="Toggle Overlay">👁</button>
+                </div>
+            </div>
+            
+            <div class="video-area">
+                <div class="canvas-container">
+                    <canvas id="artCanvas"></canvas>
+                    <video id="webcam" autoplay playsinline></video>
+                    <canvas class="webcam-overlay" id="overlay"></canvas>
+                    
+                    <div class="player-indicator p1">
+                        <span>🎨 P1</span>
+                        <div class="player-dot"></div>
+                    </div>
+                    <div class="player-indicator p2">
+                        <span>🖌️ P2</span>
+                        <div class="player-dot"></div>
+                    </div>
+                    
+                    <div class="player-status p1" id="p1Status">Waiting for face...</div>
+                    <div class="player-status p2" id="p2Status">Waiting for face...</div>
+                    
+                    <div class="loading-overlay" id="loadingOverlay">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-text">Loading Face-API Models...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Status message -->
+            <div class="status-message" id="statusMsg"></div>
+        </div>
+        
+        <div class="panel">
+            <div class="instructions">
+                <div class="instructions-title">🎮 How to Play</div>
+                <ul class="instructions-list">
+                    <li><span class="p1-tag">P1 (Left)</span>: Draws with chosen color</li>
+                    <li><span class="p2-tag">P2 (Right)</span>: Draws with chosen brush size</li>
+                    <li>Move your nose to draw on the canvas!</li>
+                </ul>
+            </div>
+
+            <div class="panel-section p1-section">
+                <div class="p1-title">🎨 P1 Color</div>
+                <div class="color-presets">
+                    <div class="color-preset active" style="background: #ff6b6b;" data-color="#ff6b6b"></div>
+                    <div class="color-preset" style="background: #4ecdc4;" data-color="#4ecdc4"></div>
+                    <div class="color-preset" style="background: #a855f7;" data-color="#a855f7"></div>
+                    <div class="color-preset" style="background: #feca57;" data-color="#feca57"></div>
+                </div>
+                <div class="custom-color">
+                    <input type="color" id="p1Color" value="#ff6b6b">
+                    <span>Custom Color</span>
+                </div>
+            </div>
+            
+            <div class="panel-section p2-section">
+                <div class="p2-title">🖌️ P2 Brush</div>
+                <div class="brush-preview">
+                    <div class="brush-preview-dot" id="brushPreview"></div>
+                </div>
+                <div class="brush-slider">
+                    <div class="slider-row">
+                        <span class="slider-label">Size</span>
+                        <span class="slider-value" id="brushSizeVal">10px</span>
+                    </div>
+                    <input type="range" id="p2BrushSize" min="2" max="50" value="10">
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="panel-title">Canvas Controls</div>
+                <div class="canvas-controls">
+                    <button class="canvas-btn" id="saveBtn">💾 Save Artwork</button>
+                    <button class="canvas-btn danger" id="clearBtn">🗑️ Clear Canvas</button>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="panel-title">Session Stats</div>
+                <div class="session-stats">
+                    <div class="stat-card">
+                        <div class="stat-value p1" id="p1Strokes">0</div>
+                        <div class="stat-label">P1 Strokes</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value p2" id="p2Strokes">0</div>
+                        <div class="stat-label">P2 Strokes</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        const video = document.getElementById('webcam');
+        const artCanvas = document.getElementById('artCanvas');
+        const artCtx = artCanvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const overlayCtx = overlay.getContext('2d');
+        
+        // UI Elements
+        const p1Status = document.getElementById('p1Status');
+        const p2Status = document.getElementById('p2Status');
+        const p1StrokesEl = document.getElementById('p1Strokes');
+        const p2StrokesEl = document.getElementById('p2Strokes');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const statusMsg = document.getElementById('statusMsg');
+        const mirrorBtn = document.getElementById('mirrorBtn');
+        const overlayBtn = document.getElementById('overlayBtn');
+        
+        const colorPresets = document.querySelectorAll('.color-preset');
+        const p1ColorInput = document.getElementById('p1Color');
+        const p2BrushSizeInput = document.getElementById('p2BrushSize');
+        const brushSizeVal = document.getElementById('brushSizeVal');
+        const brushPreview = document.getElementById('brushPreview');
+        const brushPreviewDot = document.querySelector('.brush-preview-dot');
+        const saveBtn = document.getElementById('saveBtn');
+        const clearBtn = document.getElementById('clearBtn');
+
+        let isMirrored = true;
+        let showOverlay = true;
+        let p1Color = '#ff6b6b';
+        let p2BrushSize = 10;
+        
+        let p1StrokesCount = 0;
+        let p2StrokesCount = 0;
+        let lastP1Pos = null;
+        let lastP2Pos = null;
+
+        // Ensure canvas coordinates align with their displayed sizes
+        function resizeCanvases() {
+            const container = document.querySelector('.canvas-container');
+            const rect = container.getBoundingClientRect();
+            artCanvas.width = rect.width;
+            artCanvas.height = rect.height;
+            overlay.width = rect.width;
+            overlay.height = rect.height;
+        }
+        window.addEventListener('resize', resizeCanvases);
+        resizeCanvases();
+
+        // Initialize user interface components
+        function initUI() {
+            // Apply initial mirror state
+            overlay.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+            video.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+            
+            // Player 1 Color Controls
+            colorPresets.forEach(preset => {
+                preset.addEventListener('click', () => {
+                    colorPresets.forEach(p => p.classList.remove('active'));
+                    preset.classList.add('active');
+                    p1Color = preset.dataset.color;
+                    p1ColorInput.value = p1Color;
+                });
+            });
+            
+            p1ColorInput.addEventListener('input', (e) => {
+                colorPresets.forEach(p => p.classList.remove('active'));
+                p1Color = e.target.value;
+            });
+
+            // Player 2 Brush Size Controls
+            p2BrushSizeInput.addEventListener('input', (e) => {
+                p2BrushSize = parseInt(e.target.value);
+                brushSizeVal.textContent = p2BrushSize + 'px';
+                brushPreviewDot.style.width = p2BrushSize + 'px';
+                brushPreviewDot.style.height = p2BrushSize + 'px';
+            });
+            
+            brushPreviewDot.style.width = p2BrushSize + 'px';
+            brushPreviewDot.style.height = p2BrushSize + 'px';
+
+            // Clear Canvas
+            clearBtn.addEventListener('click', () => {
+                artCtx.clearRect(0, 0, artCanvas.width, artCanvas.height);
+                p1StrokesCount = 0;
+                p2StrokesCount = 0;
+                updateStats();
+                showStatus('Canvas cleared!');
+            });
+
+            // Save Canvas Image
+            saveBtn.addEventListener('click', () => {
+                const link = document.createElement('a');
+                link.download = 'ai-wave-art.png';
+                
+                // Composite final image with dark background
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = artCanvas.width;
+                tempCanvas.height = artCanvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                tempCtx.fillStyle = '#0d0d12';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // Art is drawn correctly mirrored on artCanvas itself so we can just composite it
+                tempCtx.drawImage(artCanvas, 0, 0);
+                
+                link.href = tempCanvas.toDataURL('image/png');
+                link.click();
+                showStatus('Artwork saved!');
+            });
+
+            // Header Controls
+            mirrorBtn.addEventListener('click', () => {
+                isMirrored = !isMirrored;
+                video.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                overlay.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                showStatus(isMirrored ? 'Mirror Mode ON' : 'Mirror Mode OFF');
+            });
+            
+            overlayBtn.addEventListener('click', () => {
+                showOverlay = !showOverlay;
+                overlay.style.display = showOverlay ? 'block' : 'none';
+                showStatus(showOverlay ? 'Face Overlay ON' : 'Face Overlay OFF');
+            });
+        }
+
+        function showStatus(msg) {
+            statusMsg.textContent = msg;
+            statusMsg.classList.add('show');
+            setTimeout(() => {
+                statusMsg.classList.remove('show');
+            }, 2000);
+        }
+
+        function updateStats() {
+            p1StrokesEl.textContent = p1StrokesCount;
+            p2StrokesEl.textContent = p2StrokesCount;
+        }
+
+        // Initialize face-api.js and models
+        async function initFaceAPI() {
+            try {
+                // Fetch models from hosted githubusercontent
+                const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL)
+                ]);
+                startVideo();
+            } catch (e) {
+                console.error(e);
+                document.querySelector('.loading-text').textContent = 'Error loading AI models. Please check console.';
+            }
+        }
+
+        // Setup webcam stream
+        function startVideo() {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then(stream => {
+                    video.srcObject = stream;
+                })
+                .catch(err => {
+                    console.error("Camera error:", err);
+                    document.querySelector('.loading-text').textContent = 'Camera access denied or unavailable.';
+                });
+        }
+
+        // Start drawing loop once video plays
+        video.addEventListener('play', () => {
+            resizeCanvases();
+            loadingOverlay.style.display = 'none';
+            
+            const displaySize = { width: video.clientWidth, height: video.clientHeight };
+            
+            setInterval(async () => {
+                // Keep synchronized with potential resizes
+                displaySize.width = video.clientWidth || artCanvas.width;
+                displaySize.height = video.clientHeight || artCanvas.height;
+                
+                if (displaySize.width === 0 || displaySize.height === 0) return;
+                
+                // Detect faces
+                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                
+                overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+                if (showOverlay && resizedDetections.length > 0) {
+                    faceapi.draw.drawFaceLandmarks(overlay, resizedDetections);
+                }
+
+                // Gather nose landmarks (index 3 is the tip of the nose)
+                let noses = [];
+                resizedDetections.forEach(det => {
+                    const nose = det.landmarks.getNose();
+                    const tip = nose[3];
+                    noses.push(tip);
+                });
+                
+                if (noses.length > 0) {
+                    // Sort noses left-to-right (based on original non-mirrored coordinates)
+                    noses.sort((a, b) => a.x - b.x);
+                    
+                    let p1Nose, p2Nose;
+                    
+                    if (noses.length === 1) {
+                        p1Nose = noses[0];
+                        p1Status.textContent = 'Active (Solo)';
+                        p1Status.style.color = 'var(--p1-color)';
+                        p2Status.textContent = 'Waiting for face...';
+                        p2Status.style.color = 'var(--text-dim)';
+                        lastP2Pos = null;
+                    } else {
+                        if (isMirrored) {
+                            // If mirrored, the person on the left of the screen actually has a larger unmirrored X
+                            p1Nose = noses[1];
+                            p2Nose = noses[0];
+                        } else {
+                            p1Nose = noses[0];
+                            p2Nose = noses[1];
+                        }
+                        
+                        p1Status.textContent = 'Active';
+                        p1Status.style.color = 'var(--p1-color)';
+                        p2Status.textContent = 'Active';
+                        p2Status.style.color = 'var(--p2-color)';
+                    }
+
+                    // Drawing handler function
+                    const drawLine = (nose, lastPos, color, size, isP1) => {
+                        if (!nose) return null;
+                        
+                        // Map coordinate based on mirror state
+                        let drawX = isMirrored ? artCanvas.width - nose.x : nose.x;
+                        let drawY = nose.y;
+                        
+                        if (lastPos) {
+                            const dist = Math.hypot(drawX - lastPos.x, drawY - lastPos.y);
+                            if (dist < 150) { // Anti-jump threshold
+                                artCtx.beginPath();
+                                artCtx.moveTo(lastPos.x, lastPos.y);
+                                artCtx.lineTo(drawX, drawY);
+                                artCtx.strokeStyle = color;
+                                artCtx.lineWidth = size;
+                                artCtx.lineCap = 'round';
+                                artCtx.stroke();
+                                
+                                if (isP1) p1StrokesCount++;
+                                else p2StrokesCount++;
+                            }
+                        }
+                        
+                        // Draw current cursor directly onto the overlay
+                        if (showOverlay) {
+                            overlayCtx.beginPath();
+                            overlayCtx.arc(nose.x, nose.y, size/2, 0, 2*Math.PI);
+                            overlayCtx.fillStyle = color;
+                            overlayCtx.fill();
+                        }
+                        
+                        return {x: drawX, y: drawY};
+                    };
+
+                    const p2ColorHex = getComputedStyle(document.body).getPropertyValue('--p2-color').trim() || '#4ecdc4';
+
+                    lastP1Pos = drawLine(p1Nose, lastP1Pos, p1Color, p2BrushSize, true);
+                    lastP2Pos = drawLine(p2Nose, lastP2Pos, p2ColorHex, p2BrushSize, false);
+                    
+                    // Throttle stat updates to reduce DOM manipulation
+                    if (Math.random() < 0.1) updateStats();
+                    
+                } else {
+                    p1Status.textContent = 'Waiting for face...';
+                    p1Status.style.color = 'var(--text-dim)';
+                    p2Status.textContent = 'Waiting for face...';
+                    p2Status.style.color = 'var(--text-dim)';
+                    lastP1Pos = null;
+                    lastP2Pos = null;
+                }
+            }, 50); // Frame loop
+        });
+
+        initUI();
+        initFaceAPI();
+    </script>
+</body>
+</html>
